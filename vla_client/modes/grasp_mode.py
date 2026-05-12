@@ -123,9 +123,11 @@ class GraspMode:
                     pose_final = debug.get("pose")      # (xyz, rpy) — post-tri or VLM-fallback
                     pose_vlm   = debug.get("pose_raw")  # (xyz, rpy) — always original VLM
                     if T_f is not None and T_s is not None and pose_final is not None:
-                        # 640×480 RealSense → 480×480 center crop (offset 80,0) → 256×256
-                        K_f_256 = transform_K_for_crop_resize(self.front_camera.k_real, (80, 0), 256/480)
-                        K_s_256 = transform_K_for_crop_resize(self.side_camera.k_real,  (80, 0), 256/480)
+                        # K for the 256×256 visualizer view. Camera class derives
+                        # this from CAMERA_WIDTH/HEIGHT + k_real, so it adapts
+                        # automatically when we change the stream resolution.
+                        K_f_256 = self.front_camera.get_K_256()
+                        K_s_256 = self.side_camera.get_K_256()
                         REF = (256, 256)
                         f_pts, s_pts = {}, {}
                         f_pts['final'] = (project_base_to_pixel(pose_final[0], T_f, K_f_256), REF)

@@ -53,6 +53,27 @@ class Camera:
         res = cv2.resize(new_image, dsize=(256, 256), interpolation=cv2.INTER_CUBIC)
         return res
 
+    def get_K_256(self):
+        """Intrinsic matrix for the 256×256 view produced by crop_frame().
+
+        Applies the same center-crop + resize transform to self.k_real:
+        principal point shifts by the crop offset; fx/fy/cx/cy then scale by
+        256 / min(H, W). Use this when re-projecting a base-frame 3D point onto
+        the visualizer image (which displays the 256×256 stream resized to
+        self.size). Independent of CAMERA_WIDTH / CAMERA_HEIGHT so it stays
+        correct if the camera resolution changes.
+        """
+        H, W = self.CAMERA_HEIGHT, self.CAMERA_WIDTH
+        s = min(H, W)
+        crop_x = (W - s) // 2
+        crop_y = (H - s) // 2
+        scale = 256.0 / s
+        K = np.asarray(self.k_real, dtype=np.float64).copy()
+        K[0, 2] -= crop_x
+        K[1, 2] -= crop_y
+        K[:2, :] *= scale
+        return K
+
 
 class CameraVisualizer:
     def __init__(self, cameras: OrderedDict, hz=10, size=(512, 512), ref_images=None):
