@@ -136,13 +136,20 @@ class CameraVisualizer:
         self.goal_pixels[camera_name] = pixels_dict
 
     def draw_goal_pixels(self, frame, pixels_dict):
-        """Draw goal points on `frame` (BGR uint8). pixels_dict per set_goal_pixels."""
+        """Draw goal points on `frame` (BGR uint8). pixels_dict per set_goal_pixels.
+
+        Draw order: 'vlm' (blue, raw VLM) FIRST, 'final' (red, applied goal) LAST.
+        Final is the goal actually sent to the action expert, so it stays on top
+        even when triangulation is rejected and both points coincide.
+        """
         H_disp, W_disp = frame.shape[:2]
         colors = {
-            'final': (0,   0, 255),   # BGR red  — post-triangulation goal
+            'final': (0,   0, 255),   # BGR red  — post-triangulation (or VLM if rejected)
             'vlm':   (255, 100,  0),  # BGR blue — raw VLM goal (pre-triangulation)
         }
-        for label, value in pixels_dict.items():
+        # Iterate in explicit order: vlm first (so final is drawn on top, always visible).
+        for label in ('vlm', 'final'):
+            value = pixels_dict.get(label)
             if value is None:
                 continue
             (u, v), (H_ref, W_ref) = value
