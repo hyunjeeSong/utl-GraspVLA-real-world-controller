@@ -19,7 +19,7 @@ services:
       - ROBOT_IP=${ROBOT_IP}
     depends_on:
       - roscore
-    command: /bin/bash -c '. /catkin_ws/devel/setup.bash && roslaunch --wait serl_franka_controllers impedance.launch robot_ip:=$ROBOT_IP load_gripper:=true'
+    command: /bin/bash -c '. /catkin_ws/devel/setup.bash && until rostopic list >/dev/null 2>&1; do sleep 0.3; done && roslaunch --wait serl_franka_controllers impedance.launch robot_ip:=$ROBOT_IP load_gripper:=true'
 
   franka_controller_joint:
     image: franka_ros:latest
@@ -32,7 +32,7 @@ services:
       - ROBOT_IP=${ROBOT_IP}
     depends_on:
       - roscore
-    command: /bin/bash -c '. /catkin_ws/devel/setup.bash && rosparam set /target_joint_positions "[0.2091,0.1426,0.1644,-2.1438,0.0111,2.2028,0.3657]" && roslaunch --wait serl_franka_controllers joint.launch robot_ip:=$ROBOT_IP load_gripper:=true'
+    command: /bin/bash -c '. /catkin_ws/devel/setup.bash && until rostopic list >/dev/null 2>&1; do sleep 0.3; done && rosparam set /target_joint_positions "[0.2091,0.1426,0.1644,-2.1438,0.0111,2.2028,0.3657]" && roslaunch --wait serl_franka_controllers joint.launch robot_ip:=$ROBOT_IP load_gripper:=true'
 
   rviz:
     image: franka_ros:latest
@@ -75,7 +75,7 @@ services:
       - rviz
     working_dir: /catkin_ws/src/vla-franka
     # TODO: this doesn't work with '--help' as argument
-    command: /bin/bash -c '. /catkin_ws/devel/setup.bash && python3 main.py --front-camera $FRONT_CAMERA_SERIAL_NUMBER --side-camera $SIDE_CAMERA_SERIAL_NUMBER --server-ip $SERVER_IP --server-port $SERVER_PORT --extented_finger --controller $MODE'
+    command: /bin/bash -c '. /catkin_ws/devel/setup.bash && python3 main.py --front-camera $FRONT_CAMERA_SERIAL_NUMBER --side-camera $SIDE_CAMERA_SERIAL_NUMBER --server-ip $SERVER_IP --server-port $SERVER_PORT --controller $MODE'
  
   validate_server:
     image: franka_ros:latest
