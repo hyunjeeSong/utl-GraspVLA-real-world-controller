@@ -18,7 +18,17 @@ class Camera:
         rgb, depth= self.camera.get_frames()
         rgb = self.crop_frame(rgb)
         return rgb
-    
+
+    def get_frame_raw(self):
+        """Return native RealSense RGB frame (640×480) without crop/resize.
+
+        Used for CTRNet-X extrinsic estimation: keeping native resolution +
+        aspect ratio avoids the vertical squash that 256×256 → 320×240 introduces,
+        and the camera's real intrinsic matrix (self.k_real) is directly usable.
+        """
+        rgb, _ = self.camera.get_frames()
+        return rgb
+
     def crop_frame(self, image):
         assert image.shape[0] == 480 and image.shape[1] == 640
         # center crop and resize
@@ -54,6 +64,11 @@ class CameraVisualizer:
 
         self.publishers = {}
         self.bboxes = {}
+        # Goal pixels overlaid alongside bbox. Each entry is a dict mapping a
+        # color label ("final" / "vlm") to ((u, v), reference_image_size).
+        # "final" = post-triangulation goal (debug['pose']) — drawn red
+        # "vlm"   = raw VLM goal (debug['pose_raw'])         — drawn blue
+        self.goal_pixels = {}
         for name in cameras:
             self.publishers[name] = rospy.Publisher(f'/cameras/{name}', ImageMsg, queue_size=0)
             if self.ref_images:
@@ -80,6 +95,8 @@ class CameraVisualizer:
 
             if name in self.bboxes:
                 color_frame = self.draw_bbox(color_frame, *self.bboxes[name])
+            if name in self.goal_pixels:
+                color_frame = self.draw_goal_pixels(color_frame, self.goal_pixels[name])
             self.draw_center_cross(color_frame)
 
             if self.ref_images is not None:
@@ -112,5 +129,30 @@ class CameraVisualizer:
     def set_bbox(self, camera_name, bbox):
         self.bboxes[camera_name] = bbox
 
+    def set_goal_pixels(self, camera_name, pixels_dict):
+        """pixels_dict = {label: ((u, v), reference_image_size)} per camera.
+        label ∈ {'final', 'vlm'} — final is red, vlm is blue.
+        Pass an empty dict to clear without removing the camera entry."""
+        self.goal_pixels[camera_name] = pixels_dict
+
+    def draw_goal_pixels(self, frame, pixels_dict):
+        """Draw goal points on `frame` (BGR uint8). pixels_dict per set_goal_pixels."""
+        H_disp, W_disp = frame.shape[:2]
+        colors = {
+            'final': (0,   0, 255),   # BGR red  — post-triangulation goal
+            'vlm':   (255, 100,  0),  # BGR blue — raw VLM goal (pre-triangulation)
+        }
+        for label, value in pixels_dict.items():
+            if value is None:
+                continue
+            (u, v), (H_ref, W_ref) = value
+            u_disp = int(round(u * (W_disp / W_ref)))
+            v_disp = int(round(v * (H_disp / H_ref)))
+            color  = colors.get(label, (255, 255, 255))
+            cv2.circle(frame, (u_disp, v_disp), 8, color, -1)
+            cv2.circle(frame, (u_disp, v_disp), 12, (255, 255, 255), 2)
+        return frame
+
     def clear(self):
         self.bboxes.clear()
+        self.goal_pixels.clear()

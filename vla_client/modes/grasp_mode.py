@@ -1,6 +1,7 @@
 from ..utils.timer import Timer
 from ..utils import input_typed
 from ..utils.cameras import Camera, CameraVisualizer
+from ..utils.projection import project_base_to_pixel, transform_K_for_crop_resize
 
 import pynput
 from pynput import keyboard
@@ -50,6 +51,7 @@ class GraspMode:
         self.finished = False
         self.paused = False
         timer = Timer()
+        first_step = True
         with pynput.keyboard.Listener(on_press=self._on_keyboard_press, on_release=self._on_keyboard_release):
             while not self.finished:
                 time.sleep(0.005)
@@ -66,19 +68,35 @@ class GraspMode:
 
                     step_info = {}
 
-                    front_rgb = self.front_camera.get_frame()
-                    side_rgb = self.side_camera.get_frame()
+                    front_rgb     = self.front_camera.get_frame()      # 256×256 (VLA용)
+                    side_rgb      = self.side_camera.get_frame()
+                    front_rgb_raw = self.front_camera.get_frame_raw()  # 640×480 (CTRNet용, native)
+                    side_rgb_raw  = self.side_camera.get_frame_raw()
 
                     prev_eef_pose = self.robot_controller.get_eef_pose(0.3)
                     eef_pose = self.robot_controller.get_eef_pose()
+
+                    joint_angles_7 = np.asarray(self.robot_controller.latest_qpos, dtype=np.float32)[:7]
 
                     message = {
                         "text": instruction,
                         "front_view_image": [self._compress_image(front_rgb)],
                         "side_view_image": [self._compress_image(side_rgb)],
+                        # Raw 640×480 RealSense frames + real intrinsic for CTRNet
+                        # extrinsic estimation (no aspect distortion, real K).
+                        "front_view_image_raw": [self._compress_image(front_rgb_raw)],
+                        "side_view_image_raw":  [self._compress_image(side_rgb_raw)],
+                        "front_camera_K": np.asarray(self.front_camera.k_real, dtype=np.float64),
+                        "side_camera_K":  np.asarray(self.side_camera.k_real,  dtype=np.float64),
                         "proprio_array": [prev_eef_pose, prev_eef_pose, prev_eef_pose, eef_pose],
+                        "joint_angles": joint_angles_7,
+                        "reset_ctrnet_buffer": first_step,
+                        # Triangulation OFF — extrinsic 검증 단계. CTRNet은 돌고 (T 추정 + overlay)
+                        # 액션은 VLM xyz 그대로. overlay에서 skeleton 잘 겹치면 True로 복귀.
+                        "use_triangulation": False,
                         "compressed": True,
                     }
+                    first_step = False
 
                     with timer("request"):
                         response = self.socket.send_pyobj(message)
@@ -95,6 +113,31 @@ class GraspMode:
                     if debug.get("bbox") is not None:
                         self.camera_visualizer.set_bbox('front', (debug["bbox"][0], (224, 224)))
                         self.camera_visualizer.set_bbox('side', (debug["bbox"][1], (224, 224)))
+
+                    # Reproject goal xyz onto the displayed (256×256) camera frames
+                    # using the server-returned extrinsic + the camera's real K
+                    # transformed to match cameras.py:crop_frame (640→480 crop → 256 resize).
+                    # Two points overlaid per camera (red = post-triangulation final goal,
+                    # blue = raw VLM goal). Falls back silently if T or pose missing.
+                    T_f = debug.get("T_front"); T_s = debug.get("T_side")
+                    pose_final = debug.get("pose")      # (xyz, rpy) — post-tri or VLM-fallback
+                    pose_vlm   = debug.get("pose_raw")  # (xyz, rpy) — always original VLM
+                    if T_f is not None and T_s is not None and pose_final is not None:
+                        # 640×480 RealSense → 480×480 center crop (offset 80,0) → 256×256
+                        K_f_256 = transform_K_for_crop_resize(self.front_camera.k_real, (80, 0), 256/480)
+                        K_s_256 = transform_K_for_crop_resize(self.side_camera.k_real,  (80, 0), 256/480)
+                        REF = (256, 256)
+                        f_pts, s_pts = {}, {}
+                        f_pts['final'] = (project_base_to_pixel(pose_final[0], T_f, K_f_256), REF)
+                        s_pts['final'] = (project_base_to_pixel(pose_final[0], T_s, K_s_256), REF)
+                        if pose_vlm is not None:
+                            f_pts['vlm'] = (project_base_to_pixel(pose_vlm[0], T_f, K_f_256), REF)
+                            s_pts['vlm'] = (project_base_to_pixel(pose_vlm[0], T_s, K_s_256), REF)
+                        # Drop entries whose projection failed (point behind camera)
+                        f_pts = {k: ((px, ref) if px is not None else None) for k, (px, ref) in f_pts.items()}
+                        s_pts = {k: ((px, ref) if px is not None else None) for k, (px, ref) in s_pts.items()}
+                        self.camera_visualizer.set_goal_pixels('front', f_pts)
+                        self.camera_visualizer.set_goal_pixels('side',  s_pts)
 
                     delta_actions = response["result"]
                     current_position = eef_pose[:3]
