@@ -93,7 +93,7 @@ class GraspMode:
                         "reset_ctrnet_buffer": first_step,
                         # Triangulation OFF — extrinsic 검증 단계. CTRNet은 돌고 (T 추정 + overlay)
                         # 액션은 VLM xyz 그대로. overlay에서 skeleton 잘 겹치면 True로 복귀.
-                        "use_triangulation": False,
+                        "use_triangulation": True,
                         "compressed": True,
                     }
                     first_step = False
