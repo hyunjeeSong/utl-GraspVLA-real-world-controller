@@ -9,10 +9,21 @@ import numpy as np
 
 
 class Camera:
+    # RealSense RGB stream resolution. 1280×720 quadruples pixel count vs the
+    # previous 640×480, so a 50 mm marker at 1 m goes from ~30 px to ~60 px
+    # per side — ArUco corner sub-pixel refinement is much more accurate, and
+    # the same K_real (from RealSense SDK) is automatically updated for the
+    # new resolution. Effective FOV of the 256×256 VLA input after the
+    # center-crop+resize stays ≈43°, matching the VLA training distribution.
+    CAMERA_WIDTH  = 1280
+    CAMERA_HEIGHT = 720
+
     def __init__(self, serial_number):
-        self.camera = RealSenseCamera(serial_number, fps=30)
+        self.camera = RealSenseCamera(serial_number, fps=30,
+                                       width=self.CAMERA_WIDTH,
+                                       height=self.CAMERA_HEIGHT)
         self.k_real = self.camera.get_camera_intrinsics_matrix()
-        print(f'camera intrinsics {self.k_real}')
+        print(f'camera {self.CAMERA_WIDTH}x{self.CAMERA_HEIGHT} intrinsics {self.k_real}')
 
     def get_frame(self):
         rgb, depth= self.camera.get_frames()
@@ -20,24 +31,26 @@ class Camera:
         return rgb
 
     def get_frame_raw(self):
-        """Return native RealSense RGB frame (640×480) without crop/resize.
-
-        Used for CTRNet-X extrinsic estimation: keeping native resolution +
-        aspect ratio avoids the vertical squash that 256×256 → 320×240 introduces,
-        and the camera's real intrinsic matrix (self.k_real) is directly usable.
+        """Return native RealSense RGB frame (CAMERA_WIDTH × CAMERA_HEIGHT)
+        without crop/resize. Used for CTRNet / ArUco extrinsic estimation —
+        keeping native resolution + aspect ratio avoids the vertical squash
+        that 256×256 → 320×240 introduces, and self.k_real already matches
+        this resolution.
         """
         rgb, _ = self.camera.get_frames()
         return rgb
 
     def crop_frame(self, image):
-        assert image.shape[0] == 480 and image.shape[1] == 640
-        # center crop and resize
-        size_y, size_x, _ = image.shape
-        start_x = size_x//2 - size_y//2
-        start_y = size_y//2 - size_y//2
-        new_image = image[start_y : start_y + size_y, start_x : start_x + size_y, :]
+        """Generic center-square crop + resize to 256×256 (VLA input space).
+        Works for any RealSense resolution: takes the central min(H,W) square,
+        then resamples down/up to 256×256.
+        """
+        H, W, _ = image.shape
+        s = min(H, W)
+        start_x = (W - s) // 2
+        start_y = (H - s) // 2
+        new_image = image[start_y:start_y + s, start_x:start_x + s, :]
         res = cv2.resize(new_image, dsize=(256, 256), interpolation=cv2.INTER_CUBIC)
-
         return res
 
 
