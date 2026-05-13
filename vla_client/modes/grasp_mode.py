@@ -1,7 +1,9 @@
 from ..utils.timer import Timer
 from ..utils import input_typed
 from ..utils.cameras import Camera, CameraVisualizer
-from ..utils.projection import project_base_to_pixel, transform_K_for_crop_resize
+from ..utils.projection import (
+    project_base_to_pixel, project_gripper_to_pixels, transform_K_for_crop_resize,
+)
 
 import pynput
 from pynput import keyboard
@@ -140,6 +142,25 @@ class GraspMode:
                         s_pts = {k: ((px, ref) if px is not None else None) for k, (px, ref) in s_pts.items()}
                         self.camera_visualizer.set_goal_pixels('front', f_pts)
                         self.camera_visualizer.set_goal_pixels('side',  s_pts)
+
+                        # Gripper stick-figure overlay (U-shape: palm + 2 fingers
+                        # + wrist). Same colour scheme as the goal dots: red for
+                        # the applied goal, blue for raw VLM. Lets us read the
+                        # goal *orientation* visually, not just the position.
+                        f_grip, s_grip = {}, {}
+                        f_grip['final'] = (project_gripper_to_pixels(
+                            pose_final[0], pose_final[1], T_f, K_f_256), REF)
+                        s_grip['final'] = (project_gripper_to_pixels(
+                            pose_final[0], pose_final[1], T_s, K_s_256), REF)
+                        if pose_vlm is not None:
+                            f_grip['vlm'] = (project_gripper_to_pixels(
+                                pose_vlm[0], pose_vlm[1], T_f, K_f_256), REF)
+                            s_grip['vlm'] = (project_gripper_to_pixels(
+                                pose_vlm[0], pose_vlm[1], T_s, K_s_256), REF)
+                        f_grip = {k: ((pts, ref) if pts is not None else None) for k, (pts, ref) in f_grip.items()}
+                        s_grip = {k: ((pts, ref) if pts is not None else None) for k, (pts, ref) in s_grip.items()}
+                        self.camera_visualizer.set_gripper_pts('front', f_grip)
+                        self.camera_visualizer.set_gripper_pts('side',  s_grip)
 
                     delta_actions = response["result"]
                     current_position = eef_pose[:3]

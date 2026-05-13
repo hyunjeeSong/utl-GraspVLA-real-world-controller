@@ -103,6 +103,11 @@ class CameraVisualizer:
         # "final" = post-triangulation goal (debug['pose']) — drawn red
         # "vlm"   = raw VLM goal (debug['pose_raw'])         — drawn blue
         self.goal_pixels = {}
+        # Gripper stick-figure overlay per camera. Maps camera_name →
+        # {label: (5_pts, reference_image_size)} where label ∈ {'final','vlm'}.
+        # 5 pts are [palm_L, palm_R, tip_L, tip_R, wrist_top] in reference-image
+        # coords (rescaled to display size at draw time).
+        self.gripper_pts = {}
         for name in cameras:
             self.publishers[name] = rospy.Publisher(f'/cameras/{name}', ImageMsg, queue_size=0)
             if self.ref_images:
@@ -129,6 +134,8 @@ class CameraVisualizer:
 
             if name in self.bboxes:
                 color_frame = self.draw_bbox(color_frame, *self.bboxes[name])
+            if name in self.gripper_pts:
+                color_frame = self.draw_gripper_pts(color_frame, self.gripper_pts[name])
             if name in self.goal_pixels:
                 color_frame = self.draw_goal_pixels(color_frame, self.goal_pixels[name])
             self.draw_center_cross(color_frame)
@@ -162,6 +169,41 @@ class CameraVisualizer:
     
     def set_bbox(self, camera_name, bbox):
         self.bboxes[camera_name] = bbox
+
+    def set_gripper_pts(self, camera_name, pts_dict):
+        """pts_dict = {label: (list_of_5_pts, reference_image_size)} per camera.
+        label ∈ {'final','vlm'} — final draws red, vlm draws blue.
+        list_of_5_pts must be [palm_L, palm_R, tip_L, tip_R, wrist_top]
+        from project_gripper_to_pixels(). Pass {} to clear."""
+        self.gripper_pts[camera_name] = pts_dict
+
+    def draw_gripper_pts(self, frame, pts_dict):
+        """Draw U-shaped gripper stick figure per label.
+
+        Draw order: 'vlm' (blue) first, 'final' (red) on top — same priority as
+        draw_goal_pixels so the applied goal is never hidden.
+        """
+        H_disp, W_disp = frame.shape[:2]
+        colors = {
+            'final': (0,   0, 255),   # BGR red
+            'vlm':   (255, 100,  0),  # BGR blue
+        }
+        for label in ('vlm', 'final'):
+            entry = pts_dict.get(label)
+            if entry is None:
+                continue
+            pts5, (H_ref, W_ref) = entry
+            if pts5 is None or len(pts5) != 5:
+                continue
+            sx, sy = (W_disp / W_ref), (H_disp / H_ref)
+            p = [(int(round(u * sx)), int(round(v * sy))) for u, v in pts5]
+            palm_c = ((p[0][0] + p[1][0]) // 2, (p[0][1] + p[1][1]) // 2)
+            color = colors.get(label, (255, 255, 255))
+            cv2.line(frame, p[0], p[1], color, 2)      # palm bar
+            cv2.line(frame, p[0], p[2], color, 2)      # left finger
+            cv2.line(frame, p[1], p[3], color, 2)      # right finger
+            cv2.line(frame, palm_c, p[4], color, 2)    # wrist stem
+        return frame
 
     def set_goal_pixels(self, camera_name, pixels_dict):
         """pixels_dict = {label: ((u, v), reference_image_size)} per camera.
@@ -197,3 +239,4 @@ class CameraVisualizer:
     def clear(self):
         self.bboxes.clear()
         self.goal_pixels.clear()
+        self.gripper_pts.clear()
