@@ -1,9 +1,9 @@
 """Entry point for interactive ArUco hand-eye calibration data collection.
 
 Usage:
-    python calibrate_marker.py \\
-        --front-camera <serial> --side-camera <serial> \\
-        --server-ip <ip> --server-port 6667
+python3 calibrate_marker.py \
+    --front-camera 243622072408 --side-camera 348522071378 \
+    --server-ip 163.152.162.236 --server-port 6667
 
 Same args as main.py minus the action-related ones. The server side must be
 running with --aruco --aruco-debug-dir <path> so each capture saves a .json.

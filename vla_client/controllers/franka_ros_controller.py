@@ -27,9 +27,10 @@ class FrankaROSController:
     ROBOT_MODES_UNCONTROLLABLE = [ROBOT_MODE_GUIDING, ROBOT_MODE_USER_STOPPED, ROBOT_MODE_AUTOMATIC_ERROR_RECOVERY]
     BASE_FRAME_ID = 'panda_link0'
     EEF_FRAME_ID = 'panda_EE'
-    def __init__(self, time_mode, extented_finger):
+    def __init__(self, time_mode, extented_finger, disable_monitor=False):
         assert time_mode in ['logical', 'physical']
         self.time_mode = time_mode
+        self.disable_monitor = disable_monitor
 
         if extented_finger:
             self.REAL_EEF_TO_SIM_EEF = np.array([
@@ -100,8 +101,9 @@ class FrankaROSController:
         while self.latest_franka_state is None or self.external_force is None:
             time.sleep(0.1)
 
-        self.thread_monitor_robot_state = threading.Thread(target=self.monitor_robot_state, daemon=True)
-        self.thread_monitor_robot_state.start()
+        if not self.disable_monitor:
+            self.thread_monitor_robot_state = threading.Thread(target=self.monitor_robot_state, daemon=True)
+            self.thread_monitor_robot_state.start()
 
     def reset_history(self):
         self.history_waypoints = deque(maxlen=100)

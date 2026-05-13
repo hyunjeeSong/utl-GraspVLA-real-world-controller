@@ -35,7 +35,7 @@ class CalibrationMode:
         self.front_camera = Camera(args.front_camera)
         self.side_camera  = Camera(args.side_camera)
         self.robot_controller = controllers.FrankaROSController(
-            "logical", args.extented_finger
+            "logical", args.extented_finger, disable_monitor=True
         )
 
         self.context = zmq.Context()
